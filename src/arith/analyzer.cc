@@ -28,12 +28,22 @@
 namespace tvm {
 namespace arith {
 
-Analyzer::Analyzer()
+Analyzer::Analyzer(bool use_egg)
     : const_int_bound(this),
       modular_set(this),
       rewrite_simplify(this),
       canonical_simplify(this),
-      int_set(this) {}
+      int_set(this) {
+  if (use_egg) {
+    // TODO(@jroesch): must load the extension in Python first currently.
+    auto pf = tvm::runtime::Registry::Get("egg.simplify");
+    CHECK(pf != nullptr)
+      << "unable to load Egg based simplifier, please load the extension before invoking the analyzer in the use_egg=True.";
+    egg_simplifier = runtime::TypedPackedFunc<PrimExpr(PrimExpr)>(*pf);
+  } else {
+    egg_simplifier = runtime::TypedPackedFunc<PrimExpr(PrimExpr)>(nullptr);
+  }
+}
 
 void Analyzer::Bind(const Var& var, const PrimExpr& expr, bool allow_override) {
   PrimExpr new_expr = expr;
@@ -116,15 +126,19 @@ bool Analyzer::CanProve(const PrimExpr& expr) {
 }
 
 PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
-  if (tir::is_const_int(expr)) return expr;
-  PrimExpr res = expr;
-  for (int i = 0; i < steps; ++i) {
-    res = this->rewrite_simplify(res);
-    if (tir::is_const_int(res) || ++i == steps) return res;
-    res = this->canonical_simplify(res);
-    if (tir::is_const_int(res)) return res;
+  if (egg_simplifier != nullptr) {
+    return egg_simplifier(expr);
+  } else {
+    if (tir::is_const_int(expr)) return expr;
+    PrimExpr res = expr;
+    for (int i = 0; i < steps; ++i) {
+      res = this->rewrite_simplify(res);
+      if (tir::is_const_int(res) || ++i == steps) return res;
+      res = this->canonical_simplify(res);
+      if (tir::is_const_int(res)) return res;
+    }
+    return res;
   }
-  return res;
 }
 
 TVM_REGISTER_GLOBAL("arith.CreateAnalyzer").set_body([](TVMArgs args, TVMRetValue* ret) {

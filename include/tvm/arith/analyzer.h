@@ -394,8 +394,11 @@ class TVM_DLL Analyzer {
   CanonicalSimplifier canonical_simplify;
   /*! \brief sub-analyzer: int set */
   IntSetAnalyzer int_set;
+  /*! \brief The egg based simplifier. */
+  runtime::TypedPackedFunc<PrimExpr(PrimExpr)> egg_simplifier;
+
   /*! \brief constructor */
-  Analyzer();
+  Analyzer(bool use_egg = false);
   /*!
    * \brief Notify all the sub-analyzers that var
    *        is created and binded to expr.
