@@ -395,7 +395,7 @@ class TVM_DLL Analyzer {
   /*! \brief sub-analyzer: int set */
   IntSetAnalyzer int_set;
   /*! \brief The egg based simplifier. */
-  runtime::TypedPackedFunc<PrimExpr(PrimExpr)> egg_simplifier;
+  runtime::PackedFunc egg_simplifier;
 
   /*! \brief constructor */
   Analyzer(bool use_egg = false);

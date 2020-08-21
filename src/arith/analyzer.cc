@@ -24,6 +24,7 @@
 #include <tvm/runtime/registry.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/op.h>
+#include <cstdlib>
 
 namespace tvm {
 namespace arith {
@@ -34,14 +35,19 @@ Analyzer::Analyzer(bool use_egg)
       rewrite_simplify(this),
       canonical_simplify(this),
       int_set(this) {
-  if (use_egg) {
+  char *env = std::getenv("TVM_EGG_INT");
+  bool from_env = env && strcmp(env, "1") == 0;
+  if (use_egg || from_env) {
     // TODO(@jroesch): must load the extension in Python first currently.
+    LOG(INFO) << "Loading the egg simplifier...";
     auto pf = tvm::runtime::Registry::Get("egg.simplify");
+    LOG(INFO) << "Loaded the egg simplifier!";
     CHECK(pf != nullptr)
       << "unable to load Egg based simplifier, please load the extension before invoking the analyzer in the use_egg=True.";
-    egg_simplifier = runtime::TypedPackedFunc<PrimExpr(PrimExpr)>(*pf);
+    // TODO(@mwillsey): we want TypedPackedFunction, but we need to avoid RValue stuff for now
+    egg_simplifier = runtime::PackedFunc(*pf);
   } else {
-    egg_simplifier = runtime::TypedPackedFunc<PrimExpr(PrimExpr)>(nullptr);
+    egg_simplifier = runtime::PackedFunc(nullptr);
   }
 }
 
