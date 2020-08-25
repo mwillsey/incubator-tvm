@@ -133,7 +133,7 @@ bool Analyzer::CanProve(const PrimExpr& expr) {
 
 PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
   if (egg_simplifier != nullptr) {
-    return egg_simplifier(expr);
+    return egg_simplifier(expr, this->const_int_bound.BoundsMap());
   } else {
     if (tir::is_const_int(expr)) return expr;
     PrimExpr res = expr;

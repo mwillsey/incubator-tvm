@@ -579,6 +579,17 @@ void ConstIntBoundAnalyzer::Bind(const Var& var, const Range& range, bool allow_
   impl_->Bind(var, range, allow_override);
 }
 
+TVM_DLL Map<PrimExpr, ConstIntBound> ConstIntBoundAnalyzer::BoundsMap() {
+  Map<PrimExpr, ConstIntBound> map;
+
+  for (auto pair : impl_->var_map_) {
+    auto entry = pair.second;
+    map.Set(pair.first, ConstIntBound(entry.min_value, entry.max_value));
+  }
+
+  return map;
+}
+
 std::function<void()> ConstIntBoundAnalyzer::EnterConstraint(const PrimExpr& constraint) {
   return impl_->EnterConstraint(constraint);
 }

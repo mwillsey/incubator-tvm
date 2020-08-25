@@ -140,6 +140,8 @@ class ConstIntBoundAnalyzer {
    */
   TVM_DLL void Bind(const Var& var, const Range& range, bool allow_override = false);
 
+  TVM_DLL Map<PrimExpr, ConstIntBound> BoundsMap();
+
  private:
   friend class Analyzer;
   friend class ConstraintContext;
