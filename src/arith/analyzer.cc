@@ -24,7 +24,6 @@
 #include <tvm/runtime/registry.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/op.h>
-#include <cstdlib>
 
 namespace tvm {
 namespace arith {
@@ -35,9 +34,7 @@ Analyzer::Analyzer(bool use_egg)
       rewrite_simplify(this),
       canonical_simplify(this),
       int_set(this) {
-  char *env = std::getenv("TVM_EGG_INT");
-  bool from_env = env && strcmp(env, "1") == 0;
-  if (use_egg || from_env) {
+  if (use_egg) {
     // TODO(@jroesch): must load the extension in Python first currently.
     LOG(INFO) << "Loading the egg simplifier...";
     auto pf = tvm::runtime::Registry::Get("egg.simplify");
@@ -133,7 +130,8 @@ bool Analyzer::CanProve(const PrimExpr& expr) {
 
 PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
   if (egg_simplifier != nullptr) {
-    return egg_simplifier(expr, this->const_int_bound.BoundsMap());
+    auto map = this->const_int_bound.BoundsMap();
+    return egg_simplifier(expr, map);
   } else {
     if (tir::is_const_int(expr)) return expr;
     PrimExpr res = expr;
@@ -150,7 +148,13 @@ PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
 TVM_REGISTER_GLOBAL("arith.CreateAnalyzer").set_body([](TVMArgs args, TVMRetValue* ret) {
   using runtime::PackedFunc;
   using runtime::TypedPackedFunc;
-  auto self = std::make_shared<Analyzer>();
+  std::shared_ptr<Analyzer> self;
+  if (args.size() > 0) {
+    bool use_egg = args[0];
+    self = std::make_shared<Analyzer>(use_egg);
+  } else {
+    self = std::make_shared<Analyzer>();
+  }
   auto f = [self](std::string name) -> PackedFunc {
     if (name == "const_int_bound") {
       return PackedFunc(
