@@ -314,6 +314,44 @@ def test_forward_multiply():
     verify_model(Multiply3().float().eval(), input_data=input_data)
     verify_model(Multiply4().float().eval(), input_data=input_data)
 
+
+def test_min_max():
+    class Max(Module):
+        def forward(self, inp):
+            return torch.max(inp)
+
+    class Min(Module):
+        def forward(self, inp):
+            return torch.min(inp)
+
+    class Max2(Module):
+        def forward(self, inp):
+            out, _ = torch.max(inp, 1, keepdim=True)
+            return out
+
+    class Min2(Module):
+        def forward(self, inp):
+            out, _ = torch.min(inp, 0, keepdim=False)
+            return out
+
+    class Max3(Module):
+        def forward(self, lhs, rhs):
+            return torch.max(lhs, rhs)
+
+    class Min3(Module):
+        def forward(self, lhs, rhs):
+            return torch.min(lhs, rhs)
+
+    input_data = [torch.rand((10, 10)), torch.rand((10, 10))]
+
+    verify_model(Max(), input_data=input_data[0])
+    verify_model(Min(), input_data=input_data[0])
+    verify_model(Max2(), input_data=input_data[0])
+    verify_model(Min2(), input_data=input_data[0])
+    verify_model(Max3(), input_data=input_data)
+    verify_model(Min3(), input_data=input_data)
+
+
 def test_forward_reciprocal():
     torch.set_grad_enabled(False)
     input_shape = [2, 1, 10, 1, 10]
@@ -538,8 +576,8 @@ def test_forward_leakyrelu():
     input_data = torch.rand(input_shape).float()
     verify_model(torch.nn.LeakyReLU().eval(), input_data=input_data)
     verify_model(torch.nn.LeakyReLU(negative_slope=0.05).eval(), input_data=input_data)
-    verify_model(torch.nn.LeakyReLU(negative_slope=1.0).eval(), input_data=input_data)
-    verify_model(torch.nn.LeakyReLU(negative_slope=1.25).eval(), input_data=input_data)
+    verify_model(torch.nn.LeakyReLU(negative_slope=1.0, inplace=True).eval(), input_data=input_data)
+    verify_model(torch.nn.LeakyReLU(negative_slope=1.25, inplace=True).eval(), input_data=input_data)
 
 def test_forward_elu():
     torch.set_grad_enabled(False)
@@ -881,6 +919,21 @@ def test_forward_reshape():
     verify_model(Reshape1().float().eval(), input_data=input_data)
     verify_model(Reshape2().float().eval(), input_data=input_data)
 
+
+def test_flatten():
+    class Flatten(Module):
+        def forward(self, x):
+            return torch.flatten(x)
+
+    class BatchFlatten(Module):
+        def forward(self, x):
+            return torch.flatten(x, start_dim=1)
+
+    inp = torch.rand((5, 2, 2))
+    verify_model(Flatten(), input_data=inp)
+    verify_model(BatchFlatten(), input_data=inp)
+
+
 def test_forward_transpose():
     torch.set_grad_enabled(False)
     input_shape = [1, 3, 10, 10]
@@ -973,6 +1026,7 @@ def test_forward_view():
     verify_model(View2().float().eval(), input_data=input_data)
     verify_model(View3().float().eval(), input_data=input_data)
 
+
 def test_forward_select():
     torch.set_grad_enabled(False)
     input_shape = [1, 3, 10, 10]
@@ -981,8 +1035,25 @@ def test_forward_select():
         def forward(self, *args):
             return args[0].select(1, 1)
 
+    class IndexedSelect(Module):
+        def __init__(self, inp, dim):
+            super().__init__()
+            self.inp = inp
+            self.dim = dim
+            if torch.cuda.is_available():
+                self.inp = self.inp.cuda()
+
+        def forward(self, index):
+            return torch.index_select(self.inp, self.dim, index)
+
     input_data = torch.rand(input_shape).float()
     verify_model(Select1().float().eval(), input_data=input_data)
+
+    x = torch.randn(3, 4)
+    indices = torch.tensor([0, 2])
+    verify_model(IndexedSelect(x, 0).eval(), input_data=indices)
+    verify_model(IndexedSelect(x, 1).eval(), input_data=indices)
+
 
 def test_forward_clone():
     torch.set_grad_enabled(False)
@@ -1184,13 +1255,13 @@ def test_forward_slice():
 
     class Slice2(Module):
         def forward(self, *args):
-            return args[0][0, :, :, :]
+            return args[0][0, :, :-3, :]
 
     class Slice3(Module):
         def forward(self, *args):
             x0 = torch.tensor(2) - torch.tensor(1)
             x1 = torch.tensor(3) + torch.tensor(1)
-            return args[0][:, x0:, :x1, :]
+            return args[0][:, x0:, 1:x1, :]
 
     input_data = torch.rand(input_shape).float()
     verify_model(Slice1().float().eval(), input_data=input_data)
@@ -1278,31 +1349,32 @@ def test_upsample():
 def test_to():
     """ test for aten::to(...) """
     class ToCPU(Module):
-        def __init__(self):
-            super().__init__()
-
         def forward(self, x):
             return x.to("cpu")
 
     class ToFloat(Module):
-        def __init__(self):
-            super().__init__()
-
         def forward(self, x):
             return x.float()
 
     class ToInt(Module):
-        def __init__(self):
-            super().__init__()
-
         def forward(self, x):
             return x.int()
+
+    class ToLong(Module):
+        def forward(self, x):
+            return x.long()
+
+    class ToDouble(Module):
+        def forward(self, x):
+            return x.double()
 
     verify_model(ToCPU().eval(), torch.rand((1, 3, 32, 32)))
     verify_model(ToFloat().eval(), torch.zeros((1, 3, 32, 32), dtype=torch.int))
     verify_model(ToFloat().eval(), torch.tensor(2, dtype=torch.int))
     verify_model(ToInt().eval(), torch.zeros((1, 3, 32, 32)))
-    verify_model(ToInt().eval(), torch.tensor(2.0))
+    verify_model(ToInt().eval(), torch.tensor(0.8))
+    verify_model(ToLong().eval(), torch.tensor(0.8))
+    verify_model(ToDouble().eval(), torch.tensor(0.8))
 
 
 def test_adaptive_pool3d():
@@ -1412,6 +1484,31 @@ def test_forward_upsample3d():
     verify_model(torch.nn.Upsample(scale_factor=2, mode='nearest').eval(), inp)
     verify_model(torch.nn.Upsample(scale_factor=2, mode='trilinear').eval(), inp)
     verify_model(torch.nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True).eval(), inp)
+
+
+def test_forward_nms():
+    """dynamic Non-Maximum Suppression"""
+    torch.set_grad_enabled(False)
+    class NonMaxSupression(Module):
+        def __init__(self, iou_thres):
+            super().__init__()
+            self.iou_threshold = iou_thres
+
+        def forward(self, *args):
+            return torchvision.ops.nms(args[0], args[1], self.iou_threshold)
+
+    # Generate random input data
+    def _gen_rand_inputs(num_boxes):
+        box_len = 4
+        boxes = torch.rand(num_boxes, box_len, dtype=torch.float) * 0.5
+        boxes[:, 2] += boxes[:, 0]
+        boxes[:, 3] += boxes[:, 1]
+        scores = torch.rand(num_boxes, dtype=torch.float)
+        return boxes, scores
+
+    for num_boxes, iou_thres in [(10, 0.3), (100, 0.5), (500, 0.9)]:
+        in_boxes, in_scores = _gen_rand_inputs(num_boxes)
+        verify_trace_model(NonMaxSupression(iou_thres), [in_boxes, in_scores])
 
 
 def test_conv3d():
@@ -1552,12 +1649,7 @@ def test_segmentaton_models():
     inp = [torch.rand((1, 3, 300, 300), dtype=torch.float)]
 
     verify_model(SegmentationModelWrapper(fcn.eval()), inp, atol=1e-4, rtol=1e-4)
-
-    # depthwise + dilated covolution not supported on x86
-    # see https://github.com/apache/incubator-tvm/issues/4962
-    cuda_ctx = ("cuda", tvm.gpu(0))
-    if cuda_ctx[1].exist:
-        verify_model(SegmentationModelWrapper(deeplab.eval()), inp, [cuda_ctx], atol=1e-4, rtol=1e-4)
+    verify_model(SegmentationModelWrapper(deeplab.eval()), inp, atol=1e-4, rtol=1e-4)
 
 
 def test_3d_models():
@@ -1568,32 +1660,43 @@ def test_3d_models():
 
 def verify_script_model(pt_model, ishapes):
     script_module = torch.jit.script(pt_model)
+    verify_model_vm(script_module, ishapes)
 
+
+def verify_trace_model(pt_model, idata):
+    traced_model = torch.jit.trace(pt_model, idata)
+    ishapes = [data.shape for data in idata]
+    verify_model_vm(traced_model, ishapes, idata=idata)
+
+
+def verify_model_vm(imodel, ishapes, idtype=torch.float, idata=None):
+    input_model = imodel
     input_names = ["i{}".format(idx) for idx, ish in enumerate(ishapes)]
     input_shapes = list(zip(input_names, ishapes))
-
-    inputs = [torch.randn(shape, dtype=torch.float)
-              for shape in ishapes]
-
-    mod, params = relay.frontend.from_pytorch(script_module, input_shapes)
+    input_data = idata if idata else [torch.randn(shape, dtype=idtype)
+                                      for shape in ishapes]
+    # Compile via VM
+    mod, params = relay.frontend.from_pytorch(input_model, input_shapes)
 
     executor = relay.create_executor("vm", mod=mod, ctx=tvm.cpu(0),
                                      target="llvm")
     evaluator = executor.evaluate()
 
-    for name, inp in zip(input_names, inputs):
+    # Inference
+    for name, inp in zip(input_names, input_data):
         params[name] = inp.numpy()
+    vm_res = evaluator(**params)
 
-    op_res = evaluator(**params)
-
+    # Baseline result
     with torch.no_grad():
-        pt_result = pt_model(*inputs)
+        pt_result = input_model(*input_data)
 
+    # Verify the accuracy
     if not isinstance(pt_result, torch.Tensor):
-        tvm_res = op_res.asnumpy().item()
+        tvm_res = vm_res.asnumpy().item()
         assert pt_result == tvm_res
     else:
-        tvm.testing.assert_allclose(op_res.asnumpy(), pt_result.numpy(),
+        tvm.testing.assert_allclose(vm_res.asnumpy(), pt_result.numpy(),
                                     rtol=1e-5, atol=1e-5)
 
 
@@ -2541,6 +2644,19 @@ def test_forward_dtypes():
         tensor2 = torch.randn(3, 4).to(dtype=dt)
         verify_model(fn, input_data=[tensor1, tensor2])
 
+    class ModuleWithIntParameters(Module):
+        def __init__(self, arr):
+            super().__init__()
+            self.param = torch.nn.Parameter(torch.LongTensor(arr), requires_grad=False)
+
+        def forward(self, x):
+            return x.long() + self.param
+
+    shape = (10, 10)
+    param = torch.ones(shape, dtype=torch.long)
+    inp = torch.ones(shape, dtype=torch.int)
+    verify_model(ModuleWithIntParameters(param), input_data=inp)
+
 
 def test_weight_names():
     tm = torch.jit.trace(torch.nn.Linear(3, 4), [torch.randn(2, 3)])
@@ -2596,6 +2712,44 @@ def test_forward_matmul():
     tensor1 = torch.randn(1, 12, 14, 64)
     tensor2 = torch.randn(1, 12, 64, 14)
     verify_model(MatMul1().float().eval(), input_data=[tensor1, tensor2])
+
+
+def test_forward_index():
+    torch.set_grad_enabled(False)
+    input_shape = [3, 4, 5, 6]
+
+    class Index0(Module):
+        def forward(self, x):
+            return x[[0, 1], [0, 2], :2, 4]
+
+    input_data = torch.rand(input_shape).float()
+    verify_model(Index0().eval(), input_data=input_data)
+
+    class Index1(Module):
+        def forward(self, x):
+            return x[[0], [1, 2, 3, 0], [3, 1, 2, 2], [4, 2, 1, 0]]
+
+    input_data = torch.rand(input_shape).float()
+    verify_model(Index1().eval(), input_data=input_data)
+
+
+def test_logsumexp():
+    class Logsumexp(Module):
+        def __init__(self, dim, keepdim=False):
+            super().__init__()
+            self.dim = dim
+            self.keepdim = keepdim
+
+        def forward(self, x):
+            return torch.logsumexp(x, self.dim, self.keepdim)
+
+    input_shape = (100, 100)
+    input_data = torch.rand(input_shape)
+
+    verify_model(Logsumexp(0), input_data=input_data)
+    verify_model(Logsumexp(0, keepdim=True), input_data=input_data)
+    # Also test on double
+    verify_model(Logsumexp(1, keepdim=True), input_data=input_data.double())
 
 
 def test_forward_pretrained_bert_base_uncased():
@@ -2822,7 +2976,9 @@ if __name__ == "__main__":
     test_forward_gather()
     test_upsample()
     test_forward_upsample3d()
+    test_forward_nms()
     test_to()
+    test_flatten()
     test_type_as()
     test_forward_functional_pad()
     test_forward_zero_pad2d()
@@ -2837,6 +2993,9 @@ if __name__ == "__main__":
     test_adaptive_pool3d()
     test_conv3d()
     test_conv3d_transpose()
+    test_forward_index()
+    test_min_max()
+    test_logsumexp()
 
     # Model tests
     test_resnet18()
