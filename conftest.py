@@ -14,18 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Configuration about tests"""
-from __future__ import absolute_import as _abs
-
-import os
-import tvm
+import tvm.testing
+from pytest import ExitCode
 
 
-def ctx_list():
-    """Get context list for testcases"""
-    device_list = os.environ.get("RELAY_TEST_TARGETS", "")
-    device_list = (device_list.split(",") if device_list
-                   else ["llvm", "cuda"])
-    device_list = set(device_list)
-    res = [(device, tvm.context(device, 0)) for device in device_list]
-    return [x for x in res if x[1].exist]
+def pytest_configure(config):
+    print("enabled targets:", "; ".join(map(lambda x: x[0], tvm.testing.enabled_targets())))
+    print("pytest marker:", config.option.markexpr)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    # Don't exit with an error if we select a subset of tests that doesn't
+    # include anything
+    if session.config.option.markexpr != "":
+        if exitstatus == ExitCode.NO_TESTS_COLLECTED:
+            session.exitstatus = ExitCode.OK

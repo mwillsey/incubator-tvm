@@ -26,6 +26,7 @@
 
 #include <tvm/te/operation.h>
 #include <tvm/tir/data_layout.h>
+#include <tvm/topi/broadcast.h>
 #include <tvm/topi/detail/constant_utils.h>
 #include <tvm/topi/detail/ravel_unravel.h>
 #include <tvm/topi/detail/tensor_utils.h>
@@ -891,16 +892,22 @@ inline Tensor where(const Tensor& condition, const Tensor& x, const Tensor& y,
       << " vs " << y->shape.size();
   CHECK_EQ(x->dtype, y->dtype) << "x and y must have the same dtype: " << x->dtype << " vs "
                                << y->dtype;
-  Array<PrimExpr> oshape = x->shape;
-  Tensor out;
 
-  if (condition->shape.size() != 1) {
+  if (x->shape.size() == 0) {
+    return compute(
+        condition->shape,
+        [&](const Array<Var>& indices) {
+          Array<PrimExpr> condition_idx{indices[0]};
+          return tvm::tir::Select(condition(condition_idx) != 0, x(), y());
+        },
+        name, tag);
+  } else if (condition->shape.size() != 1) {
     CHECK_EQ(condition->shape.size(), x->shape.size())
         << "condition array must be either have the same shape as x or to be a "
            "1-D array.Got different number of dimension: "
         << condition->shape.size() << " vs " << x->shape.size();
-    out = compute(
-        oshape,
+    return compute(
+        x->shape,
         [&](const Array<Var>& indices) {
           return tvm::tir::Select(condition(indices) != 0, x(indices), y(indices));
         },
@@ -909,15 +916,14 @@ inline Tensor where(const Tensor& condition, const Tensor& x, const Tensor& y,
     CHECK_EQ(topi::GetConstInt(condition->shape[0]), topi::GetConstInt(x->shape[0]))
         << "If condition is 1-D, the first dimension must be the same as x: " << condition->shape[0]
         << " vs " << x->shape[0];
-    out = compute(
-        oshape,
+    return compute(
+        x->shape,
         [&](const Array<Var>& indices) {
           Array<PrimExpr> condition_idx{indices[0]};
           return tvm::tir::Select(condition(condition_idx) != 0, x(indices), y(indices));
         },
         name, tag);
   }
-  return out;
 }
 
 /*!
@@ -1542,6 +1548,85 @@ inline Tensor matrix_set_diag(const Tensor& input, const Tensor& diagonal,
         };
         return if_then_else((PrimExpr)iter_vars[ndim] == iter_vars[ndim - 1], get_diag(),
                             input(iter_vars));
+      },
+      name, tag);
+}
+
+/*!
+ * \brief Numpy style advanced indexing with tensor.
+ * \param data is input data.
+ * \param indices is list of indexing tensors.
+ * \param name output tensor name.
+ * \param tag output tensor tag.
+ * \return Output tensor.
+ */
+inline Tensor adv_index(const Tensor& data, const Array<Tensor>& indices,
+                        const std::string name = "advanced_index",
+                        const std::string tag = kInjective) {
+  Array<PrimExpr> oshape;
+  Array<PrimExpr> broadcast_shape;
+  Array<Tensor> bindices;
+  std::vector<int64_t> flatten_shape_lens;
+  int64_t num_picked_elems = 1;
+  bool has_dyn_shape = false;
+
+  if (indices.size() == 1) {
+    broadcast_shape = indices[0]->shape;
+    bindices = indices;
+  } else {
+    for (const auto& index : indices) {
+      int64_t flatten_len = 1;
+      for (const auto& dim : index->shape) {
+        const IntImmNode* axis_len = dim.as<IntImmNode>();
+        if (!axis_len) {
+          broadcast_shape = index->shape;
+          has_dyn_shape = true;
+          break;
+        }
+        flatten_len *= axis_len->value;
+      }
+      if (has_dyn_shape) break;
+      flatten_shape_lens.push_back(flatten_len);
+      if (flatten_len > num_picked_elems) {
+        num_picked_elems = flatten_len;
+        broadcast_shape = index->shape;
+      }
+    }
+
+    // Do broadcast for indices
+    for (size_t i = 0; i < indices.size(); ++i) {
+      if (!has_dyn_shape && flatten_shape_lens[i] < num_picked_elems) {
+        bindices.push_back(broadcast_to(indices[i], broadcast_shape));
+      } else {
+        bindices.push_back(indices[i]);
+      }
+    }
+  }
+
+  for (const auto& dim : broadcast_shape) {
+    oshape.push_back(dim);
+  }
+  for (size_t i = indices.size(); i < data->shape.size(); ++i) {
+    oshape.push_back(data->shape[i]);
+  }
+
+  return compute(
+      oshape,
+      [&](const Array<Var>& iter_var) {
+        Array<PrimExpr> tensor_indices;
+        for (size_t i = 0; i < broadcast_shape.size(); ++i) {
+          tensor_indices.push_back(iter_var[i]);
+        }
+
+        Array<PrimExpr> real_indices;
+        for (size_t i = 0; i < bindices.size(); ++i) {
+          real_indices.push_back(bindices[i](tensor_indices));
+        }
+        for (size_t i = broadcast_shape.size(); i < iter_var.size(); ++i) {
+          real_indices.push_back(iter_var[i]);
+        }
+
+        return data(real_indices);
       },
       name, tag);
 }
