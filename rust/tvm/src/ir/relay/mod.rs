@@ -44,7 +44,7 @@ impl Id {
 #[repr(C)]
 #[derive(Object)]
 #[ref_name = "BaseExpr"]
-#[type_key = "Expr"]
+#[type_key = "RelayExpr"]
 pub struct BaseExprNode {
     pub base: Object,
 }
@@ -65,17 +65,17 @@ impl BaseExprNode {
 
 #[repr(C)]
 #[derive(Object)]
-#[ref_name = "Expr"]
-#[type_key = "relay.Expr"]
-pub struct RelayExpr {
+#[ref_name = "RelayExpr"]
+#[type_key = "RelayExpr"]
+pub struct RelayExprNode {
     pub base: BaseExprNode,
     pub span: ObjectRef,
     pub checked_type: ObjectRef,
 }
 
-impl RelayExpr {
-    fn base<T: IsObject>() -> RelayExpr {
-        RelayExpr {
+impl RelayExprNode {
+    fn base<T: IsObject>() -> Self {
+        RelayExprNode {
             base: BaseExprNode::base::<T>(),
             span: ObjectRef::null(),
             checked_type: ObjectRef::null(),
@@ -88,14 +88,14 @@ impl RelayExpr {
 #[ref_name = "GlobalVar"]
 #[type_key = "GlobalVar"]
 pub struct GlobalVarNode {
-    pub base: RelayExpr,
+    pub base: RelayExprNode,
     pub name_hint: TString,
 }
 
 impl GlobalVar {
     pub fn new(name_hint: String, _span: ObjectRef) -> GlobalVar {
         let node = GlobalVarNode {
-            base: RelayExpr::base::<GlobalVarNode>(),
+            base: RelayExprNode::base::<GlobalVarNode>(),
             name_hint: name_hint.into(),
         };
         GlobalVar(Some(ObjectPtr::new(node)))
@@ -107,14 +107,14 @@ impl GlobalVar {
 #[ref_name = "Constant"]
 #[type_key = "relay.Constant"]
 pub struct ConstantNode {
-    pub base: RelayExpr,
+    pub base: RelayExprNode,
     pub data: ObjectRef, // make this NDArray.
 }
 
 impl Constant {
     pub fn new(data: ObjectRef, _span: ObjectRef) -> Constant {
         let node = ConstantNode {
-            base: RelayExpr::base::<ConstantNode>(),
+            base: RelayExprNode::base::<ConstantNode>(),
             data: data,
         };
         Constant(Some(ObjectPtr::new(node)))
@@ -126,7 +126,7 @@ impl Constant {
 #[ref_name = "Var"]
 #[type_key = "relay.Var"]
 pub struct VarNode {
-    pub base: RelayExpr,
+    pub base: RelayExprNode,
     pub vid: Id,
     pub type_annotation: ObjectRef,
 }
@@ -134,7 +134,7 @@ pub struct VarNode {
 impl Var {
     pub fn new(name_hint: String, _span: ObjectRef) -> Var {
         let node = VarNode {
-            base: RelayExpr::base::<VarNode>(),
+            base: RelayExprNode::base::<VarNode>(),
             vid: Id::new(name_hint.into()),
             type_annotation: ObjectRef::null(),
         };
@@ -145,8 +145,8 @@ impl Var {
         &self.vid.0.as_ref().unwrap().name_hint
     }
 
-    pub fn to_expr(self) -> Expr {
-        unsafe { Expr(std::mem::transmute(self.0)) }
+    pub fn to_expr(self) -> RelayExpr {
+        self.upcast()
     }
 }
 
@@ -158,23 +158,23 @@ pub type Attrs = ObjectRef;
 #[ref_name = "Call"]
 #[type_key = "relay.Call"]
 pub struct CallNode {
-    pub base: RelayExpr,
-    pub op: Expr,
-    pub args: Array<Expr>,
+    pub base: RelayExprNode,
+    pub op: RelayExpr,
+    pub args: Array<RelayExpr>,
     pub attrs: ObjectRef,
     pub type_args: Array<ObjectRef>,
 }
 
 impl Call {
     pub fn new(
-        op: Expr,
-        args: Array<Expr>,
+        op: RelayExpr,
+        args: Array<RelayExpr>,
         attrs: Attrs,
         type_args: Array<ObjectRef>,
         _span: ObjectRef,
     ) -> Call {
         let node = CallNode {
-            base: RelayExpr::base::<VarNode>(),
+            base: RelayExprNode::base::<VarNode>(),
             op: op,
             args: args,
             attrs: attrs,
@@ -189,14 +189,14 @@ impl Call {
 #[ref_name = "BaseFunc"]
 #[type_key = "BaseFunc"]
 pub struct BaseFuncNode {
-    pub base: RelayExpr,
+    pub base: RelayExprNode,
     pub attrs: ObjectRef,
 }
 
 impl BaseFuncNode {
     fn base<T: IsObject>() -> BaseFuncNode {
         BaseFuncNode {
-            base: RelayExpr::base::<T>(),
+            base: RelayExprNode::base::<T>(),
             attrs: ObjectRef::null(),
         }
     }
@@ -209,7 +209,7 @@ impl BaseFuncNode {
 pub struct FunctionNode {
     pub base: BaseFuncNode,
     pub params: Array<Var>,
-    pub body: Expr,
+    pub body: RelayExpr,
     pub ret_type: Type,
     pub type_params: Array<Type>,
 }
@@ -217,7 +217,7 @@ pub struct FunctionNode {
 impl Function {
     pub fn new(
         params: Array<Var>,
-        body: Expr,
+        body: RelayExpr,
         ret_type: Type,
         type_params: Array<Type>,
     ) -> Function {

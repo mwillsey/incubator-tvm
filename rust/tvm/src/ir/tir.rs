@@ -17,7 +17,7 @@
  * under the License.
  */
 
-use crate::runtime::String as TVMString;
+use crate::runtime::{array::Array, String as TVMString};
 use crate::DataType;
 
 use super::*;
@@ -45,6 +45,8 @@ macro_rules! define_node {
 
 define_node!(IntImm, "IntImm", "IntImm";
              IntImmNode { value: i64 });
+define_node!(FloatImm, "FloatImm", "FloatImm";
+             FloatImmNode { value: f64 });
 define_node!(Var, "Var", "tir.Var";
              VarNode { name_hint: TVMString });
 
@@ -81,3 +83,6 @@ define_node!(Or,  "Or",  "tir.Or";  OrNode  { a: PrimExpr, b: PrimExpr });
 define_node!(Not, "Not", "tir.Not"; NotNode { value: PrimExpr });
 
 define_node!(Let, "Let", "tir.Let"; LetNode { var: Var, value: PrimExpr, body: PrimExpr });
+define_node!(Call, "Call", "tir.Call"; CallNode { op: super::relay::RelayExpr, args: Array<PrimExpr> });
+define_node!(Load, "Load", "tir.Load"; LoadNode { var: Var, index: PrimExpr, predicate: PrimExpr });
+define_node!(Broadcast, "Broadcast", "tir.Broadcast"; BroadcastNode { value: PrimExpr, lanes: i32 });
