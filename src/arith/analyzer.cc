@@ -24,6 +24,7 @@
 #include <tvm/runtime/registry.h>
 #include <tvm/tir/expr.h>
 #include <tvm/tir/op.h>
+#include <cstdlib>
 
 namespace tvm {
 namespace arith {
@@ -34,11 +35,13 @@ Analyzer::Analyzer(bool use_egg)
       rewrite_simplify(this),
       canonical_simplify(this),
       int_set(this) {
-  if (use_egg) {
+  char* egg_env = getenv("TVM_EGG_INTSIMP");
+  bool egg_from_env = egg_env && strcmp(egg_env, "1") == 0;
+  if (use_egg || egg_from_env) {
     // TODO(@jroesch): must load the extension in Python first currently.
-    LOG(INFO) << "Loading the egg simplifier...";
+    // LOG(INFO) << "Loading the egg simplifier...";
     auto pf = tvm::runtime::Registry::Get("egg.simplify");
-    LOG(INFO) << "Loaded the egg simplifier!";
+    // LOG(INFO) << "Loaded the egg simplifier!";
     CHECK(pf != nullptr)
       << "unable to load Egg based simplifier, please load the extension before invoking the analyzer in the use_egg=True.";
     // TODO(@mwillsey): we want TypedPackedFunction, but we need to avoid RValue stuff for now
@@ -129,11 +132,11 @@ bool Analyzer::CanProve(const PrimExpr& expr) {
 }
 
 PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
+  if (tir::is_const_int(expr)) return expr;
   if (egg_simplifier != nullptr) {
     auto map = this->const_int_bound.BoundsMap();
     return egg_simplifier(expr, map);
   } else {
-    if (tir::is_const_int(expr)) return expr;
     PrimExpr res = expr;
     for (int i = 0; i < steps; ++i) {
       res = this->rewrite_simplify(res);
