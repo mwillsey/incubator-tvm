@@ -18,7 +18,7 @@
  */
 
 use std::convert::TryFrom;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::ptr::NonNull;
 use std::sync::atomic::AtomicI32;
 
@@ -157,6 +157,20 @@ impl Object {
 pub unsafe trait IsObject: AsRef<Object> {
     const TYPE_KEY: &'static str;
 
+    fn type_index(&self) -> u32 {
+        self.as_ref().type_index
+    }
+
+    fn type_key(&self) -> &'static str {
+        let idx = self.type_index();
+        let mut key_ptr: *const i8 = std::ptr::null();
+        crate::check_call!(ffi::TVMObjectTypeIndex2Key(idx, &mut key_ptr));
+        assert!(!key_ptr.is_null());
+        let key = unsafe { CStr::from_ptr(key_ptr) };
+        key.to_str()
+            .unwrap_or_else(|err| panic!("Error converting type key: idx={}, key={:?}, err={}", idx, key.to_string_lossy(), err))
+    }
+
     unsafe extern "C" fn typed_delete(object: *mut Self) {
         let object = Box::from_raw(object);
         drop(object)
@@ -234,21 +248,38 @@ impl<T: IsObject> ObjectPtr<T> {
         unsafe { self.cast() }
     }
 
-    pub fn downcast<U>(self) -> Result<ObjectPtr<U>, Error>
+    fn can_downcast<U>(&self) -> bool
     where
         U: IsObject + AsRef<T>,
     {
         let child_index = Object::get_type_index::<U>();
         let object_index = self.as_ref().type_index;
 
-        let is_derived = if child_index == object_index {
+        if child_index == object_index {
             true
         } else {
             // TODO(@jroesch): write tests
             derived_from(object_index, child_index)
-        };
+        }
+    }
 
-        if is_derived {
+    pub fn downcast_clone<U>(&self) -> Result<ObjectPtr<U>, Error>
+    where
+        U: IsObject + AsRef<T>,
+    {
+        if self.can_downcast::<U>() {
+            let ptr = self.clone();
+            Ok(unsafe { ptr.cast() })
+        } else {
+            Err(Error::downcast("TODOget_type_key".into(), U::TYPE_KEY))
+        }
+    }
+
+    pub fn downcast<U>(self) -> Result<ObjectPtr<U>, Error>
+    where
+        U: IsObject + AsRef<T>,
+    {
+        if self.can_downcast::<U>() {
             Ok(unsafe { self.cast() })
         } else {
             Err(Error::downcast("TODOget_type_key".into(), U::TYPE_KEY))

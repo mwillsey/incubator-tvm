@@ -258,3 +258,14 @@ int TVMObjectTypeKey2Index(const char* type_key, unsigned* out_tindex) {
   out_tindex[0] = tvm::runtime::ObjectInternal::ObjectTypeKey2Index(type_key);
   API_END();
 }
+
+int TVMObjectTypeIndex2Key(unsigned type_index, const char** out_key) {
+  API_BEGIN();
+  auto type_key = tvm::runtime::Object::TypeIndex2Key(type_index);
+  // NOTE we have to copy because TypeIndex2Key gives us a copied std::string,
+  // and we need to hand something back that survives this stack frame
+  char *buffer = new char[type_key.size() + 1];
+  std::strncpy(buffer, type_key.c_str(), type_key.size() + 1);
+  out_key[0] = buffer;
+  API_END();
+}

@@ -84,6 +84,16 @@ pub trait IsObjectRef:
         let ptr = ptr.transpose()?;
         Ok(U::from_ptr(ptr))
     }
+
+    fn downcast_clone<U>(&self) -> Result<U, Error>
+    where
+        U: IsObjectRef,
+        U::Object: AsRef<Self::Object>,
+    {
+        let ptr = self.as_ptr().map(ObjectPtr::downcast_clone);
+        let ptr = ptr.transpose()?;
+        Ok(U::from_ptr(ptr))
+    }
 }
 
 external! {
