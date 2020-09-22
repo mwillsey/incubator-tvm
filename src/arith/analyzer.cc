@@ -131,11 +131,16 @@ bool Analyzer::CanProve(const PrimExpr& expr) {
   return false;
 }
 
+// see other .cc file
+void ValidateDType(const PrimExpr& expr);
+
 PrimExpr Analyzer::Simplify(const PrimExpr& expr, int steps) {
   if (tir::is_const_int(expr)) return expr;
   if (egg_simplifier != nullptr) {
     auto map = this->const_int_bound.BoundsMap();
-    return egg_simplifier(expr, map);
+    auto res = egg_simplifier(expr, map);
+    ValidateDType(res);
+    return res;
   } else {
     PrimExpr res = expr;
     for (int i = 0; i < steps; ++i) {
