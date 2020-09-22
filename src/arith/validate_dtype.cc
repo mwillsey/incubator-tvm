@@ -6,7 +6,7 @@ namespace arith {
 
 class ValidateDataType: public tir::ExprVisitor {
     void VisitExpr(const PrimExpr& expr) {
-        CHECK_NE(expr->dtype->bits, 0);
+        CHECK_NE(expr->dtype.bits(), 0);
         tir::ExprVisitor::VisitExpr(expr);
     }
 };
